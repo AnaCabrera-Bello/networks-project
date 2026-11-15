@@ -3,7 +3,6 @@ import socket
 import threading
 import mimetypes
 
-
 IP = "100.82.117.26"
 PORT = 4450
 ADDR = (IP,PORT)

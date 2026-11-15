@@ -6,7 +6,7 @@ CLIENT_LOG = "clientPerformanceLog.csv"
 SERVER_LOG = "serverPerformanceLog.csv"
 
 def logMetrics(operation, fileName, sizeBytes, duration, logFile=CLIENT_LOG):
-    """Universal logging function for both client and server operations."""
+    # Universal logging function for both client and server operations."""
     dataRate = (sizeBytes / (1024 * 1024)) / duration if duration > 0 else 0
     fileSize = round(sizeBytes / (1024 * 1024), 4)
     
@@ -24,7 +24,7 @@ def logMetrics(operation, fileName, sizeBytes, duration, logFile=CLIENT_LOG):
         ])
 
 def printLogTable(title, logFile):
-    """Helper function to print a clean tabular summary for a log file."""
+    # Helper function to print a clean tabular summary for a log file."""
     if not os.path.exists(logFile):
         print(f"\n[{title}] No performance logs found at '{logFile}'.")
         return
@@ -49,7 +49,7 @@ def printLogTable(title, logFile):
     print("=" * 101)
 
 def generateAnalysisSummary():
-    """Reads and prints structured reports for both client and server logs."""
+    # Reads and prints structured reports for both client and server logs."""
     print("\n========== FINAL PERFORMANCE ANALYSIS DASHBOARD ==========")
     printLogTable("Client Side", CLIENT_LOG)
     printLogTable("Server Side", SERVER_LOG)

@@ -32,30 +32,29 @@ def main():
                     # establish TCP connection using IPv4 and Stream Sockets
                     clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     clientSocket.connect((serverIP, serverPort))
-                    print("[OK] Connected to server.")
+                    welcome_msg = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
+                    print(f"[OK] Connected to server: {welcome_msg}")
                     
                     # secure authentication: hash password with SHA-256
-                    username = input("Username: ").strip()
-                    password = getpass.getpass("Password: ")
-                    hashedPW = hashlib.sha256(password.encode()).hexdigest()
+                    # username = input("Username: ").strip()
+                    # password = getpass.getpass("Password: ")
+                    # hashedPW = hashlib.sha256(password.encode()).hexdigest()
                     
                     # send authentication packet
-                    authData = f"AUTH@{username}@{hashedPW}"
-                    clientSocket.sendall(authData.encode('utf-8'))
+                    # authData = f"AUTH@{username}@{hashedPW}"
+                    # clientSocket.sendall(authData.encode('utf-8'))
                     
                     # receive and evaluate server authentication response
-                    response = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
-                    parts = response.split("@", 1)
-                    status = parts[0]
-                    msg = parts[1] if len(parts) > 1 else ""
-                    
-                    if status == "OK" or status == "SUCCESS":
-                        print(f"[OK] {msg}")
-                        connected = True
-                    else:
-                        print(f"[ERROR] {msg or 'Authentication failed.'}")
-                        clientSocket.close()
-                        clientSocket = None
+                    # response = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
+                    # if "OK" in response or "SUCCESS" in response:
+                    #     print("[OK] Authentication successful.")
+                    #     connected = True
+                    # else:
+                    #     print("[ERROR] Authentication failed.")
+                    #     clientSocket.close()
+                    #     clientSocket = None
+                        
+                    connected = True # remove once authentication is live
                 except Exception as e:
                     print(f"[ERROR] Connection failed: {e}")
             else:
@@ -97,15 +96,15 @@ def main():
                     
                     # handle file overwrite confirmation
                     srvRes = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
-                    if "@" in srvRes:
-                        status, msg = srvRes.split("@", 1)
-                        if status == "PROMPT_OVERWRITE":
-                            choice = input(f"[?] {msg} (Y/N): ").strip().upper()
-                            clientSocket.sendall(choice.encode('utf-8'))
-                            if choice != 'Y':
-                                print("[*] Upload cancelled.")
-                                continue
-                    
+                    if "Overwrite?" in srvRes:
+                        choice = input(f"[?] {srvRes} ").strip().upper()
+                        clientSocket.sendall(choice.encode('utf-8'))
+                        if choice != 'Y':
+                            cancel_msg = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
+                            print(f"[*] {cancel_msg}")
+                            continue
+                        clientSocket.recv(BUFFER_SIZE).decode('utf-8') # wait for READY
+                        
                     print(f"Uploading {fileName}...")
                     startTime = time.time()
                     
@@ -118,20 +117,17 @@ def main():
                             clientSocket.sendall(chunk)
                             
                     # receive completion confirmation and calculate performance metrics
-                    confirmation = json.loads(clientSocket.recv(BUFFER_SIZE).decode('utf-8'))
+                    confirmation = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
                     duration = time.time() - startTime
                     dataRate = fileSizeMB / duration if duration > 0 else 0
                     
-                    if "OK" in confirmation or "SUCCESS" in confirmation:
-                        print("Progress: 100%")
-                        print(f"Size: {fileSizeMB} MB")
-                        print(f"Transfer Time: {duration:.2f} seconds")
-                        print(f"Average Speed: {dataRate:.2f} MB/s")
-                        print("[OK] Upload completed.")
-                        logMetrics("UPLOAD", fileName, fileSize, duration)
-                    else:
-                        print(f"[ERROR] Upload failed.")
-                        
+                    print("Progress: 100%")
+                    print(f"Size: {fileSizeMB} MB")
+                    print(f"Transfer Time: {duration:.2f} seconds")
+                    print(f"Average Speed: {dataRate:.2f} MB/s")
+                    print(f"{confirmation}")
+                    logMetrics("UPLOAD", fileName, fileSize, duration)
+                    
                 # 2. download operation: requests file and streams incoming binary data into local storage
                 elif action == "2" or action == "download":
                     fileName = input("Enter server file name to download: ").strip()
@@ -139,17 +135,25 @@ def main():
                     clientSocket.sendall(req.encode('utf-8'))
                     
                     response = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
-                    parts = response.split("@")
-                    
-                    if parts[0] == "ERROR":
-                        print(f"[ERROR] {parts[1] if len(parts) > 1 else 'File not found.'}")
+                    if "[ERROR]" in response:
+                        print(f"{response}")
                         continue
                     
-                    # assuming server responds with "SUCCESS@filesize"
-                    fileSize = int(parts[1]) if len(parts) > 1 else 0
-                    fileSizeMB = round(fileSize / (1024 * 1024), 2)
+                    if "SIZE@" in response:
+                        fileSize = int(response.split("@")[1])
+                        fileSizeMB = round(fileSize / (1024 * 1024), 2)
+                    else:
+                        print(f"[ERROR] Unexpected response: {response}")
+                        continue
                     
-                    clientSocket.sendall(b"Y") # proceed download confirmation
+                    if os.path.exists(fileName):
+                        choice = input(f"[?] Local file '{fileName}' exists. Overwrite? (Y/N): ").strip().upper()
+                        if choice != 'Y':
+                            clientSocket.sendall(b"CANCEL")
+                            print("[*] Download cancelled.")
+                            continue
+                    
+                    clientSocket.sendall(b"READY")
                     
                     print(f"Downloading {fileName}...")
                     startTime = time.time()
@@ -181,46 +185,31 @@ def main():
                     req = f"DELETE@{fileName}"
                     clientSocket.sendall(req.encode('utf-8'))
                     res = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
-                    parts = res.split("@", 1)
-                    if parts[0] == "OK" or parts[0] == "SUCCESS":
-                        print(f"[OK] {parts[1] if len(parts) > 1 else 'File deleted.'}")
-                    else:
-                        print(f"[ERROR] {parts[1] if len(parts) > 1 else 'Delete failed.'}")
+                    print(f"{res}")
                         
                 # 4. dir operation: requests and displays server directory inventory list
                 elif action == "4" or action == "dir":
-                    req = "DIR@"
+                    req = "DIRECTORY@"
                     clientSocket.sendall(req.encode('utf-8'))
-                    
                     res = clientSocket.recv(BUFFER_SIZE * 4).decode('utf-8')
-                    print(f"[OK] Server directory response:\n{res}")
+                    print(f"{res}")
                     
                 # 5. subfolder create operation: requests creation of a new subfolder path
                 elif action == "5" or action == "subfolder create":
                     path = input("Enter folder name to create: ").strip()
-                    req = f"SUBFOLDER@create@{path}"
+                    req = f"SUBFOLDER CREATE@{path}"
                     clientSocket.sendall(req.encode('utf-8'))
-                    
                     res = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
-                    parts = res.split("@", 1)
-                    if parts[0] == "OK" or parts[0] == "SUCCESS":
-                        print(f"[OK] {parts[1] if len(parts) > 1 else 'Folder created.'}")
-                    else:
-                        print(f"[ERROR] {parts[1] if len(parts) > 1 else 'Action failed.'}")
+                    print(f"{res}")
                         
                 # 6. subfolder delete operation: requests deletion of an empty subfolder path
                 elif action == "6" or action == "subfolder delete":
                     path = input("Enter folder name to delete: ").strip()
-                    req = f"SUBFOLDER@delete@{path}"
+                    req = f"SUBFOLDER DELETE@{path}"
                     clientSocket.sendall(req.encode('utf-8'))
-                    
                     res = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
-                    parts = res.split("@", 1)
-                    if parts[0] == "OK" or parts[0] == "SUCCESS":
-                        print(f"[OK] {parts[1] if len(parts) > 1 else 'Folder deleted.'}")
-                    else:
-                        print(f"[ERROR] {parts[1] if len(parts) > 1 else 'Action failed.'}")
-                        
+                    print(f"{res}")
+                    
                 # 7. disconnect operation: safely terminates socket session with server
                 elif action == "7" or action == "disconnect":
                     req = "DISCONNECT@"

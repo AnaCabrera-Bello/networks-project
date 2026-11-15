@@ -12,6 +12,9 @@ SERVER_DATA_PATH = "server_data"
 
 def main():
     
+    
+    # connect to server
+        ## implement username/password - will need error handling for incorrect/unaccepted inputs
     client = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     client.connect(ADDR)
     while True:  ### multiple communications

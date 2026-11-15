@@ -3,7 +3,8 @@ import socket
 import threading
 import mimetypes
 
-IP = "172.20.10.12"
+
+IP = "100.82.117.26"
 PORT = 4450
 ADDR = (IP,PORT)
 SIZE = 1024
@@ -73,6 +74,8 @@ def upload(conn, cmd_parts):
 
         # tells client to start sending files
         conn.sendall("READY".encode(FORMAT))
+
+        print(f"[{threading.current_thread().name}] Receiving file...")
 
         with open(temp_path, "wb") as file:
             remaining = size

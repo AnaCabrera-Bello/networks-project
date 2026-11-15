@@ -1,6 +1,7 @@
 import os
 import socket
 import threading
+import mimetypes
 
 IP = "172.20.10.12"
 PORT = 4450
@@ -31,10 +32,14 @@ menu = """
 ==================================
 """
 
+active_files = set()
+active_folders = set()
 
 ### to handle individual commands
 def upload(conn, cmd_parts):
     try:
+        tracking = False
+
         temp_path = None
         filename = cmd_parts[1].strip()
         size = int(cmd_parts[2].strip())
@@ -44,7 +49,14 @@ def upload(conn, cmd_parts):
 
         file_path = os.path.join(SERVER_PATH, filename)
         temp_path = file_path + ".tmp"
-        
+
+        # check if file is being used elsewhere
+        if filename in active_files:
+            raise PermissionError("File is currently being processed.")
+        active_files.add(filename)
+        tracking = True
+
+        # check if the file already exists
         if os.path.exists(file_path):
             conn.sendall("File already exists. Overwrite? (Y/N)".encode(FORMAT))
 
@@ -74,17 +86,23 @@ def upload(conn, cmd_parts):
                     raise ConnectionError("Client disconnected during upload.")
 
         os.replace(temp_path, file_path)
-        conn.sendall("[OK] Upload successful.".encode(FORMAT))
+        conn.sendall("[OK] Upload completed.".encode(FORMAT))
         
-    except (OSError, ValueError, IndexError, ConnectionError) as e:
-        if temp_path and os.path.isfile(temp_path):
+    except (OSError, ValueError, IndexError, ConnectionError, PermissionError) as e:
+        if tracking and temp_path and os.path.isfile(temp_path):
             os.remove(temp_path)
 
         conn.sendall(f"[ERROR] {e}".encode(FORMAT))
 
+    finally:
+        if tracking:
+            active_files.discard(filename)
+
 
 def download(conn, cmd_parts):
     try:
+        tracking = False
+
         # verify a filename was sent
         filename = cmd_parts[1].strip()
         if not filename:
@@ -94,6 +112,12 @@ def download(conn, cmd_parts):
         file_path = os.path.join(SERVER_PATH, filename)
         if not os.path.isfile(file_path):
             raise FileNotFoundError("File does not exist.")
+
+        # check if file is being used elsewhere
+        if filename in active_files:
+            raise PermissionError("File is currently being processed.")
+        active_files.add(filename)
+        tracking = True
 
         # get file size and send to client
         size = os.path.getsize(file_path)
@@ -114,46 +138,172 @@ def download(conn, cmd_parts):
 
                 conn.sendall(chunk)
 
-        
+    except (OSError, IndexError, FileNotFoundError, ValueError, PermissionError) as e:
+        conn.sendall(f"[ERROR] {e}".encode(FORMAT))
+
+    finally:
+        if tracking:
+            active_files.discard(filename)
 
 
-        
+def delete(conn, cmd_parts):
+    try:
+        tracking = False
 
-    except (OSError, IndexError, FileNotFoundError, ValueError) as e:
+        # verify a filename was sent
+        filename = cmd_parts[1].strip()
+        if not filename:
+            raise ValueError("No filename provided.")
+
+        # verify the file exists
+        file_path = os.path.join(SERVER_PATH, filename)
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError("File does not exist.")
+
+        # check if file is being used elsewhere
+        if filename in active_files:
+            raise PermissionError("File is currently being processed.")
+        active_files.add(filename)
+        tracking = True
+
+        # delete the file
+        os.remove(file_path)
+        conn.sendall("[OK] File deleted.".encode(FORMAT))
+
+    except (OSError, IndexError, FileNotFoundError, ValueError, PermissionError) as e:
+        conn.sendall(f"[ERROR] {e}".encode(FORMAT))
+
+    finally:
+        if tracking:
+            active_files.discard(filename)
+
+
+def directory(conn):
+    try:
+        # check if directory is empty
+        contents = os.listdir(SERVER_PATH)
+        if not contents:
+            conn.sendall("EMPTY".encode(FORMAT))
+            return
+
+        files = []
+
+        # get the info for every file
+        for name in contents:
+            file_path = os.path.join(SERVER_PATH, name)
+            if os.path.isdir(file_path):
+                file_type = "Folder"
+                file_size = 0
+            else:
+                file_type, _ = mimetypes.guess_type(name)
+                file_type = file_type.split("/")[0].capitalize() if file_type else "Other"
+                file_size = os.path.getsize(file_path)
+
+            files.append(f"{name}@{file_size}@{file_type}")
+
+        conn.sendall("[OK] Server directory:".encode(FORMAT))
+        conn.sendall("\n".join(files).encode(FORMAT))
+
+
+    except OSError as e:
+        conn.sendall(f"[ERROR] {e}".encode(FORMAT))  
+
+
+def subfolder_create(conn, cmd_parts):
+    try:
+        # verify a folder name was sent
+        foldername = cmd_parts[1].strip()
+        if not foldername:
+            raise ValueError("No folder name provided.")
+
+        # make sure the path is not outside the server folder
+        folder_path = os.path.realpath(os.path.join(SERVER_PATH, foldername))
+        server_path = os.path.realpath(SERVER_PATH)
+        if os.path.commonpath([server_path, folder_path]) != server_path:
+            raise ValueError("Invalid folder path.")
+
+        # check if folder already exists
+        if os.path.exists(folder_path):
+            raise FileExistsError("Folder already exists.")
+
+        # create the folder
+        os.makedirs(folder_path)
+
+        conn.sendall(f"[OK] Folder '{foldername}' created.".encode(FORMAT))
+
+    except (OSError, IndexError, ValueError, FileExistsError) as e:
         conn.sendall(f"[ERROR] {e}".encode(FORMAT))
 
 
+def subfolder_delete(conn, cmd_parts):
+    try:
+        # verify a folder name was sent
+        foldername = cmd_parts[1].strip()
+        if not foldername:
+            raise ValueError("No folder name provided.")
+
+        # make sure the path is not outside the server folder
+        folder_path = os.path.realpath(os.path.join(SERVER_PATH, foldername))
+        server_path = os.path.realpath(SERVER_PATH)
+        if os.path.commonpath([server_path, folder_path]) != server_path or folder_path == server_path:
+            raise ValueError("Invalid folder path.")
+
+        # verify the folder exists
+        if not os.path.isdir(folder_path):
+            raise FileNotFoundError("Folder does not exist.")
+
+        # delete folder (only works if empty)
+        os.rmdir(folder_path)
+
+        conn.sendall(f"[OK] Folder '{foldername}' deleted.".encode(FORMAT))
+
+    except (OSError, IndexError, ValueError, FileNotFoundError) as e:
+        conn.sendall(f"[ERROR] {e}".encode(FORMAT))
+
 ### to handle client input
+
 def handle_command(conn, cmd_parts):
+    cmd = cmd_parts[0]
+    thread = threading.current_thread().name
 
-    if cmd_parts[0] == commands[0]:
-        conn.sendall("Starting upload...".encode(FORMAT))
+    if cmd == commands[0]:
+        print(f"[{thread}] UPLOAD {cmd_parts[1] if len(cmd_parts) > 1 else ''}")
         upload(conn, cmd_parts)
-        
-    elif cmd_parts[0] == commands[1]:
-        conn.sendall("Starting download...".encode(FORMAT))
 
-    elif cmd_parts[0] == commands[2]:
-        conn.sendall("Deleting file...".encode(FORMAT))
+    elif cmd == commands[1]:
+        print(f"[{thread}] DOWNLOAD {cmd_parts[1] if len(cmd_parts) > 1 else ''}")
+        download(conn, cmd_parts)
 
-    elif cmd_parts[0] == commands[3] or cmd == "DIR":
-        conn.sendall("Displaying directory...".encode(FORMAT))
+    elif cmd == commands[2]:
+        print(f"[{thread}] DELETE {cmd_parts[1] if len(cmd_parts) > 1 else ''}")
+        delete(conn, cmd_parts)
 
-    elif cmd_parts[0] == commands[4]:
-        conn.sendall("Creating subfolder...".encode(FORMAT))
+    elif cmd == commands[3] or cmd == "DIR":
+        print(f"[{thread}] DIR requested.")
+        directory(conn)
+        print(f"[{thread}] Directory list sent.")
 
-    elif cmd_parts[0] == commands[5]:
-        conn.sendall("Deleting subfolder...".encode(FORMAT))
+    elif cmd == commands[4]:
+        print(f"[{thread}] CREATE FOLDER {cmd_parts[1] if len(cmd_parts) > 1 else ''}")
+        subfolder_create(conn, cmd_parts)
+
+    elif cmd == commands[5]:
+        print(f"[{thread}] DELETE FOLDER {cmd_parts[1] if len(cmd_parts) > 1 else ''}")
+        subfolder_delete(conn, cmd_parts)
 
     else:
-        conn.sendall("Invalid command.".encode(FORMAT))
+        print(f"[{thread}] Invalid command: {cmd}")
+        conn.sendall("[ERROR] Invalid command.".encode(FORMAT))
 
 
 ### to handle the clients
-def handle_client (conn,addr):
+def handle_client(conn, addr):
+    print(f"[CONNECT] {addr[0]}:{addr[1]}")
+    print(f"[{threading.current_thread().name}] Started for client {addr}")
 
-    print(f"[NEW CONNECTION] {addr} connected.")
-    conn.send("OK@Welcome to the server".encode(FORMAT))
+    conn.sendall("[OK] Connected to server.".encode(FORMAT))
+
+    # add authentication here
 
     while True:
         data = conn.recv(SIZE).decode(FORMAT)
@@ -161,21 +311,15 @@ def handle_client (conn,addr):
         if not data:
             break
 
-        data = data.split("@")
-        cmd = data[0].strip().upper()
-        cmd_info = data[1].strip() if len(data) > 1 else ""
-       
-        send_data = "OK@"
+        cmd_parts = data.split("@")
+        cmd = cmd_parts[0].strip().upper()
+        cmd_parts[0] = cmd
 
-        if cmd == "LOGOUT":
+        if cmd == "DISCONNECT":
+            conn.sendall("[OK] Disconnected from server.".encode(FORMAT))
             break
-
-        elif cmd == "TASK": 
-            send_data += "LOGOUT from the server.\n"
-
-            conn.send(send_data.encode(FORMAT))
-
-
+        else:
+            handle_command(conn, cmd_parts)
 
     print(f"{addr} disconnected")
     conn.close()
@@ -192,6 +336,12 @@ def main():
 
     print("[SERVER] IP: ", IP)
     print("[SERVER] Port: ", PORT)
+
+    os.makedirs(SERVER_PATH, exist_ok=True)
+    print("[SERVER] Storage initialized.")
+
+    # need to connect the analysis part here
+
     print("[SERVER] Listening for connections...")
 
     while True:

@@ -34,7 +34,7 @@ def generate_analysis_summary():
     with open(STATS_LOG_FILE, mode='r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            print(f"[{row['Operation']}] {row['FileName']} ({row['FileSize_MB']} MB) - Time: {row['Duration_sec']}s - Speed: {row['DataRate_MBs']} MB/s")
+            print(f"[{row['Operation']}] {row['FileName']} ({row['FileSizeMB']} MB) - Time: {row['Duration_s']}s - Speed: {row['DataRate_MBs']} MB/s")
     print("=================================================")
 
 if __name__ == "__main__":

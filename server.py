@@ -2,6 +2,8 @@ import os
 import socket
 import threading
 import mimetypes
+import time
+import csv
 
 IP = "100.82.117.26"
 PORT = 4450
@@ -9,6 +11,7 @@ ADDR = (IP,PORT)
 SIZE = 1024
 FORMAT = "utf-8"
 SERVER_PATH = "server"
+SERVER_LOG = "serverPerformanceLog.csv"
 
 commands = [
     "UPLOAD",
@@ -34,6 +37,18 @@ menu = """
 
 active_files = set()
 active_folders = set()
+
+def logServerMetrics(operation, fileName, sizeBytes, duration):
+    fileSizeMB = round(sizeBytes / (1024 * 1024), 4)
+    dataRate = round(fileSizeMB / duration, 2) if duration > 0 else 0
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    fileExists = os.path.exists(SERVER_LOG)
+    with open(SERVER_LOG, mode="a", newline="") as f:
+        writer = csv.writer(f)
+        if not fileExists:
+            writer.writerow(["Timestamp", "Operation", "FileName", "FileSizeMB", "Duration_s", "DataRateMBs"])
+        writer.writerow([timestamp, operation, fileName, fileSizeMB, round(duration, 4), dataRate])
 
 ### to handle individual commands
 def upload(conn, cmd_parts):
@@ -76,6 +91,7 @@ def upload(conn, cmd_parts):
 
         print(f"[{threading.current_thread().name}] Receiving file...")
 
+        start_time = time.time()
         with open(temp_path, "wb") as file:
             remaining = size
 
@@ -86,6 +102,9 @@ def upload(conn, cmd_parts):
 
                 if not chunk:
                     raise ConnectionError("Client disconnected during upload.")
+
+        duration = time.time() - start_time
+        logServerMetrics("UPLOAD", filename, size, duration)  # log metrics
 
         os.replace(temp_path, file_path)
         conn.sendall("[OK] Upload completed.".encode(FORMAT))
@@ -130,6 +149,7 @@ def download(conn, cmd_parts):
         if response != "READY":
             return
 
+        start_time = time.time()
         # send file
         with open(file_path, "rb") as file:
             while True:
@@ -139,6 +159,9 @@ def download(conn, cmd_parts):
                     break
 
                 conn.sendall(chunk)
+                
+        duration = time.time() - start_time
+        logServerMetrics("DOWNLOAD", filename, size, duration)  # log metrics
 
     except (OSError, IndexError, FileNotFoundError, ValueError, PermissionError) as e:
         conn.sendall(f"[ERROR] {e}".encode(FORMAT))

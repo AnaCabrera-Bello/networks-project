@@ -192,7 +192,21 @@ def main():
                     req = "DIRECTORY@"
                     clientSocket.sendall(req.encode('utf-8'))
                     res = clientSocket.recv(BUFFER_SIZE * 4).decode('utf-8')
-                    print(f"{res}")
+                    
+                    print("\n[OK] Server directory:")
+                    print(f"{'File Name':<20} {'Size (Bytes)':<15} {'Type'}")
+                    print("-" * 50)
+                    
+                    lines = res.split("\n")
+                    for line in lines:
+                        if "@" in line:
+                            parts = line.split("@")
+                            fname = parts[0]
+                            fsize = parts[1]
+                            ftype = parts[2] if len(parts) > 2 else "Unknown"
+                            print(f"{fname:<20} {fsize:<15} {ftype}")
+                        else:
+                            print(line)
                     
                 # 5. subfolder create operation: requests creation of a new subfolder path
                 elif action == "5" or action == "subfolder create":

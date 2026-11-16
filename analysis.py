@@ -51,8 +51,8 @@ def printLogTable(title, logFile):
 def generateAnalysisSummary():
     # Reads and prints structured reports for both client and server logs."""
     print("\n========== FINAL PERFORMANCE ANALYSIS DASHBOARD ==========")
-    printLogTable("Client Side", CLIENT_LOG)
     printLogTable("Server Side", SERVER_LOG)
+    printLogTable("Client Side", CLIENT_LOG)
     print("=========================================================")
 
 if __name__ == "__main__":

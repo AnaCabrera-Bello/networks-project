@@ -49,7 +49,7 @@ def logServerMetrics(operation, fileName, sizeBytes, duration):
         if not fileExists:
             writer.writerow(["Timestamp", "Operation", "FileName", "FileSizeMB", "Duration_s", "DataRateMBs"])
         writer.writerow([timestamp, operation, fileName, fileSizeMB, round(duration, 4), dataRate])
-
+    
 ### to handle individual commands
 def upload(conn, cmd_parts):
     try:

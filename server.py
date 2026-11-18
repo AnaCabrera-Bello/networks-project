@@ -412,6 +412,7 @@ def handle_client(conn, addr):
         try:
             data = conn.recv(SIZE).decode(FORMAT)
         except ConnectionResetError:
+            active_clients -= 1
             break
 
         if not data:

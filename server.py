@@ -4,6 +4,8 @@ import threading
 import mimetypes
 import time
 import csv
+import json
+import hmac
 
 IP = "100.82.117.26"
 PORT = 4450
@@ -49,7 +51,38 @@ def logServerMetrics(operation, fileName, sizeBytes, duration):
         if not fileExists:
             writer.writerow(["Timestamp", "Operation", "FileName", "FileSizeMB", "Duration_s", "DataRateMBs"])
         writer.writerow([timestamp, operation, fileName, fileSizeMB, round(duration, 4), dataRate])
-    
+
+def authenticate(conn):
+    try:
+        # recieve authentication request
+        data = conn.recv(SIZE).decode(FORMAT).strip()
+        parts = data.split("@")
+
+        if len(parts) != 3 or parts[0] != "AUTH":
+            raise ValueError("Invalid authentication request.")
+
+        username = parts[1]
+        password_hash = parts[2]
+
+        # load authorized users
+        with open("users.json", "r") as file:
+            users = json.load(file)
+
+        # verify username and password
+        stored_hash = users.get(username)
+
+        if stored_hash and hmac.compare_digest(stored_hash, password_hash):
+            conn.sendall("[OK] Authentication successful.".encode(FORMAT))
+            print(f"[AUTH] {username} authenticated.")
+            return True
+
+        raise PermissionError("Invalid username or password.")
+
+    except (OSError, ValueError, PermissionError) as e:
+        conn.sendall(f"[ERROR] {e}".encode(FORMAT))
+        print(f"[AUTH] Authentication failed: {e}")
+        return False
+
 ### to handle individual commands
 def upload(conn, cmd_parts):
     try:
@@ -328,7 +361,10 @@ def handle_client(conn, addr):
 
     conn.sendall("[OK] Connected to server.".encode(FORMAT))
 
-    # add authentication here
+    # authenticate user
+    if not authenticate(conn):
+        conn.close()
+        return
 
     while True:
         data = conn.recv(SIZE).decode(FORMAT)

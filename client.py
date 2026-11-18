@@ -85,7 +85,16 @@ def main():
                         print("[ERROR] File not found.")
                         continue
                     
-                    fileName = os.path.basename(filePath)
+                    # ask if they want it in a subfolder, or default to root
+                    subfolder = input("Enter target subfolder (leave blank for root): ").strip()
+                    baseName = os.path.basename(filePath)
+
+                    # format the filename with the subfolder prefix if provided
+                    if subfolder:
+                        fileName = f"{subfolder}/{baseName}"
+                    else:
+                        fileName = baseName
+                    
                     fileSize = os.path.getsize(filePath)
                     fileSizeMB = round(fileSize / (1024 * 1024), 2)
                     

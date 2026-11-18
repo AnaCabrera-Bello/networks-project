@@ -43,6 +43,9 @@ menu = """
 ==================================
 """
 
+active_clients = 0
+client_lock = threading.Lock()
+
 active_files = set()
 active_folders = set()
 
@@ -59,6 +62,7 @@ def logServerMetrics(operation, fileName, sizeBytes, duration):
         writer.writerow([timestamp, operation, fileName, fileSizeMB, round(duration, 4), dataRate])
 
 def authenticate(conn):
+    global active_clients
     try:
         # recieve authentication request
         data = conn.recv(SIZE).decode(FORMAT).strip()
@@ -76,6 +80,7 @@ def authenticate(conn):
         if stored_hash and hmac.compare_digest(stored_hash, password_hash):
             conn.sendall("[OK] Authentication successful.".encode(FORMAT))
             print(f"[AUTH] {username} authenticated.")
+            print(f"[SERVER] Active clients: {active_clients}")
             return True
 
         raise PermissionError("Invalid username or password.")
@@ -83,6 +88,7 @@ def authenticate(conn):
     except (OSError, ValueError, PermissionError) as e:
         conn.sendall(f"[ERROR] {e}".encode(FORMAT))
         print(f"[AUTH] Authentication failed")
+        active_clients -= 1
         return False
 
 ### to handle individual commands
@@ -97,7 +103,15 @@ def upload(conn, cmd_parts):
         if not filename:
             raise ValueError("No filename provided.")
 
-        file_path = os.path.join(SERVER_PATH, filename)
+        file_path = os.path.realpath(os.path.join(SERVER_PATH, filename))
+        server_path = os.path.realpath(SERVER_PATH)
+
+        if os.path.commonpath([server_path, file_path]) != server_path:
+            raise ValueError("Invalid file path.")
+
+        if not os.path.isdir(os.path.dirname(file_path)):
+            raise FileNotFoundError("Destination folder does not exist.")
+        
         temp_path = file_path + ".tmp"
 
         # check if file is being used elsewhere
@@ -124,7 +138,7 @@ def upload(conn, cmd_parts):
         # tells client to start sending files
         conn.sendall("READY".encode(FORMAT))
 
-        print(f"[{threading.current_thread().name}] Receiving file...")
+        print(f"[{threading.current_thread().name.split()[0].upper()}] Receiving file...")
 
         start_time = time.time()
         with open(temp_path, "wb") as file:
@@ -141,13 +155,22 @@ def upload(conn, cmd_parts):
         duration = time.time() - start_time
         logServerMetrics("UPLOAD", filename, size, duration)  # log metrics
 
+        size_mb = size / (1024 * 1024)
+        rate = size_mb / duration if duration > 0 else 0
+
+        print(f"[ANALYSIS] Upload: {size_mb:.2f} MB / {duration:.2f} s")
+        print(f"[ANALYSIS] Rate: {rate:.2f} MB/s")
+
         os.replace(temp_path, file_path)
         conn.sendall("[OK] Upload completed.".encode(FORMAT))
+        print(f"[{threading.current_thread().name.split()[0].upper()}] Upload completed.")
+        print()
         
     except (OSError, ValueError, IndexError, ConnectionError, PermissionError) as e:
         if tracking and temp_path and os.path.isfile(temp_path):
             os.remove(temp_path)
 
+        print(f"[ERROR] {threading.current_thread().name.split()[0].upper()}: {e}")
         conn.sendall(f"[ERROR] {e}".encode(FORMAT))
 
     finally:
@@ -181,7 +204,10 @@ def download(conn, cmd_parts):
 
         # wait for "READY" response from client to send file (if not ready, stop)
         response = conn.recv(SIZE).decode(FORMAT).strip().upper()
+        print(f"[DEBUG] Download received: {repr(response)}")
+
         if response != "READY":
+            print("[ERROR] Client did not send READY.")
             return
 
         start_time = time.time()
@@ -194,9 +220,17 @@ def download(conn, cmd_parts):
                     break
 
                 conn.sendall(chunk)
-                
+
+        print(f"[{threading.current_thread().name.split()[0].upper()}] Download completed.")
         duration = time.time() - start_time
         logServerMetrics("DOWNLOAD", filename, size, duration)  # log metrics
+
+        size_mb = size / (1024 * 1024)
+        rate = size_mb / duration if duration > 0 else 0
+
+        print(f"[ANALYSIS] Download: {size_mb:.2f} MB / {duration:.2f} s")
+        print(f"[ANALYSIS] Rate: {rate:.2f} MB/s")
+        print("[ANALYSIS] Statistics saved.")
 
     except (OSError, IndexError, FileNotFoundError, ValueError, PermissionError) as e:
         conn.sendall(f"[ERROR] {e}".encode(FORMAT))
@@ -324,7 +358,8 @@ def subfolder_delete(conn, cmd_parts):
 
 def handle_command(conn, cmd_parts):
     cmd = cmd_parts[0]
-    thread = threading.current_thread().name
+    thread = threading.current_thread().name.split()[0].upper()
+    print()
 
     if cmd == commands[0]:
         print(f"[{thread}] UPLOAD {cmd_parts[1] if len(cmd_parts) > 1 else ''}")
@@ -358,8 +393,13 @@ def handle_command(conn, cmd_parts):
 
 ### to handle the clients
 def handle_client(conn, addr):
+    global active_clients
+    
+    print()
     print(f"[CONNECT] {addr[0]}:{addr[1]}")
-    print(f"[{threading.current_thread().name.split()[1]}] Started for client {addr}")
+    active_clients += 1
+    client_num = active_clients
+    print(f"[{threading.current_thread().name.split()[0].upper()}] Started for Client {client_num}")
 
     conn.sendall("[OK] Connected to server.".encode(FORMAT))
 
@@ -369,7 +409,10 @@ def handle_client(conn, addr):
         return
 
     while True:
-        data = conn.recv(SIZE).decode(FORMAT)
+        try:
+            data = conn.recv(SIZE).decode(FORMAT)
+        except ConnectionResetError:
+            break
 
         if not data:
             break
@@ -384,7 +427,7 @@ def handle_client(conn, addr):
         else:
             handle_command(conn, cmd_parts)
 
-    print(f"{addr} disconnected")
+    print(f"[DISCONNECT] Client {client_num} disconnected")
     conn.close()
 
 
@@ -403,7 +446,7 @@ def main():
     os.makedirs(SERVER_PATH, exist_ok=True)
     print("[SERVER] Storage initialized.")
 
-    # need to connect the analysis part here
+    print("[ANALYSIS] Monitoring started.")
 
     print("[SERVER] Listening for connections...")
 

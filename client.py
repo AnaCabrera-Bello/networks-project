@@ -140,14 +140,14 @@ def main():
                 elif action == "2" or action == "download":
                     fileName = input("Enter server file name to download: ").strip()
 
-                    existing_size = 0# BLAH
-                    if os.path.exists(fileName):# BLAH
-                        existing_size = os.path.getsize(fileName)# BLAH
-                        choice = input(f"[?] Local file '{fileName}' exists ({existing_size} bytes). Resume download? (Y/N): ").strip().upper()# BLAH
-                        if choice != 'Y':# BLAH
-                            existing_size = 0 # BLAH
+                    existing_size = 0 # Alex - Initialize existing_size to 0, which will be used to determine if we are resuming a download
+                    if os.path.exists(fileName): # Alex - Check if the local file already exists
+                        existing_size = os.path.getsize(fileName) # Alex - Get the size of the existing file
+                        choice = input(f"[?] Local file '{fileName}' exists ({existing_size} bytes). Resume download? (Y/N): ").strip().upper() # Alex - Ask the user if they want to resume the download
+                        if choice != 'Y': # Alex - If the user doesn't want to resume, set existing_size to 0
+                            existing_size = 0 # Alex - Reset existing_size to 0
 
-                    req = f"DOWNLOAD@{fileName}@{existing_size}" # BLAH
+                    req = f"DOWNLOAD@{fileName}@{existing_size}" # Alex - Send the download request to the server, including the existing size if resuming
                     clientSocket.sendall(req.encode('utf-8'))
                     
                     response = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
@@ -156,9 +156,9 @@ def main():
                         continue
                     
                     if "SIZE@" in response:
-                        parts = response.split("@") # BLAH
-                        fileSize = int(parts[1]) # BLAH
-                        server_offset = int(parts[2]) if len(parts) > 2 else existing_size # BLAH
+                        parts = response.split("@") # Alex - Split the response to extract file size and server offset
+                        fileSize = int(parts[1]) # Alex - Grabs second item in the list, which is the total file size on the server and converts it to an integer
+                        server_offset = int(parts[2]) if len(parts) > 2 else existing_size # Alex - Grabs third item in the list, which is the server offset (where to start sending data from) and converts it to an integer. If not provided, use existing_size
                         fileSizeMB = round(fileSize / (1024 * 1024), 2)
                     else:
                         print(f"[ERROR] Unexpected response: {response}")
@@ -176,11 +176,11 @@ def main():
                     print(f"Downloading {fileName}...")
                     startTime = time.time()
 
-                    mode = "ab" if server_offset > 0 else "wb" # BLAH
+                    mode = "ab" if server_offset > 0 else "wb" # Alex - If server_offset is greater than 0, we are resuming a download, so open the file in append binary mode. Otherwise, open it in write binary mode to start fresh.
                     
                     # receive file chunks sequentially until full file size is reached
-                    bytesReceived = server_offset # BLAH
-                    with open(fileName, mode) as f: # BLAH
+                    bytesReceived = server_offset # Alex - Initialize bytesReceived to server_offset, so we know how many bytes have already been received if resuming a download
+                    with open(fileName, mode) as f: # Alex - Open the file in the proper mode (append or write) based on whether we are resuming or starting fresh
                         while bytesReceived < fileSize:
                             remaining = fileSize - bytesReceived
                             chunkSize = BUFFER_SIZE if remaining > BUFFER_SIZE else remaining
@@ -191,18 +191,18 @@ def main():
                             bytesReceived += len(chunk)
                             
                     duration = time.time() - startTime
-                    transferSizeMB = round((fileSize - server_offset) / (1024 * 1024), 2) # BLAH
-                    dataRate = transferSizeMB / duration if duration > 0 else 0 # BLAH
+                    transferSizeMB = round((fileSize - server_offset) / (1024 * 1024), 2) # Alex - Calculate the transfer size in MB during this specific session, which is the total file size minus the server offset (or existing size). This gives us the actual amount of data transferred during this download session.
+                    dataRate = transferSizeMB / duration if duration > 0 else 0 # Alex - Divides the transfer size by the duration to get the average data rate in MB/s, so we don't divide by zero.
                     
                     print("Progress: 100%")
                     print(f"Transfer Time: {duration:.2f} seconds")
                     print(f"Average Speed: {dataRate:.2f} MB/s")
-                    print("Verifying file integrity (SHA-256)...") # BLAH
-                    sha256_hash = hashlib.sha256() # BLAH
-                    with open(fileName, "rb") as f: # BLAH
-                        for byte_block in iter(lambda: f.read(BUFFER_SIZE), b""): #BLAH
-                            sha256_hash.update(byte_block) # BLAH
-                    print(f"[OK] SHA-256 Checksum: {sha256_hash.hexdigest()}") # BLAH
+                    print("Verifying file integrity (SHA-256)...") # Alex - Let's you know that we're in the verification step
+                    sha256_hash = hashlib.sha256() # Alex - Create a new SHA-256 hash object to compute the checksum of the downloaded file
+                    with open(fileName, "rb") as f: # Alex - Open the downloaded file in binary read mode
+                        for byte_block in iter(lambda: f.read(BUFFER_SIZE), b""): # Alex - Read the file in chunks
+                            sha256_hash.update(byte_block) # Alex - Update the hash with each chunk
+                    print(f"[OK] SHA-256 Checksum: {sha256_hash.hexdigest()}") # Alex - Print the computed SHA-256 checksum
                     print("[OK] Download completed.")
                     logMetrics("DOWNLOAD", fileName, fileSize, duration)
                     

@@ -184,7 +184,7 @@ def download(conn, cmd_parts):
 
         # verify a filename was sent
         filename = cmd_parts[1].strip()
-        start_offset = int(cmd_parts[2].strip()) if len(cmd_parts) > 2 else 0#BLAH
+        start_offset = int(cmd_parts[2].strip()) if len(cmd_parts) > 2 else 0 # Alex - If starting a fresh download, the length is 2, if resuming a download then the client sends byte offset as a third argument (length of 3)
 
         if not filename:
             raise ValueError("No filename provided.")
@@ -201,12 +201,12 @@ def download(conn, cmd_parts):
         tracking = True
 
         # get file size and send to client
-        total_size = os.path.getsize(file_path)#BLAH
+        total_size = os.path.getsize(file_path) # Alex - get the total size of the file to be downloaded
 
-        if start_offset > total_size:#BLAH
-            start_offset = total_size#BLAH
+        if start_offset > total_size: # Alex - Bounds check, if the start offset is beyond the file size. If file on server is modified or replaced with a smaller version, the local partial file might be larger than the entire fire in the server
+            start_offset = total_size # Alex - adjust the start offset to the file size
 
-        conn.sendall(f"SIZE@{total_size}@{start_offset}".encode(FORMAT))#BLAH
+        conn.sendall(f"SIZE@{total_size}@{start_offset}".encode(FORMAT)) # Alex - Send the file size and start offset to the client
 
         # wait for "READY" response from client to send file (if not ready, stop)
         response = conn.recv(SIZE).decode(FORMAT).strip().upper()
@@ -219,7 +219,7 @@ def download(conn, cmd_parts):
         start_time = time.time()
         # send file
         with open(file_path, "rb") as file:
-            file.seek(start_offset)#BLAH
+            file.seek(start_offset) # Alex - Move the file pointer to the start offset, so that the download can resume from where it left off
             while True:
                 chunk = file.read(SIZE)
 
@@ -230,10 +230,10 @@ def download(conn, cmd_parts):
 
         print(f"[{threading.current_thread().name.split()[0].upper()}] Download completed.")
         duration = time.time() - start_time
-        transferred_bytes = total_size - start_offset #BLAH
-        logServerMetrics("DOWNLOAD", filename, transferred_bytes, duration)  # log metrics#BLAH
+        transferred_bytes = total_size - start_offset # Alex - Calculate the number of bytes transferred during this download session, which is the total size minus the starting offset
+        logServerMetrics("DOWNLOAD", filename, transferred_bytes, duration)  # Alex - Log the download metrics, using the transferred bytes instead of the total size, since we want to log the actual amount of data sent during this session
 
-        size_mb = transferred_bytes / (1024 * 1024)#BLAH
+        size_mb = transferred_bytes / (1024 * 1024) # Alex - Convert transferred bytes to megabytes
         rate = size_mb / duration if duration > 0 else 0
 
         print(f"[ANALYSIS] Download: {size_mb:.2f} MB / {duration:.2f} s")

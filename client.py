@@ -139,7 +139,15 @@ def main():
                 # 2. download operation: requests file and streams incoming binary data into local storage
                 elif action == "2" or action == "download":
                     fileName = input("Enter server file name to download: ").strip()
-                    req = f"DOWNLOAD@{fileName}"
+
+                    existing_size = 0# BLAH
+                    if os.path.exists(fileName):# BLAH
+                        existing_size = os.path.getsize(fileName)# BLAH
+                        choice = input(f"[?] Local file '{fileName}' exists ({existing_size} bytes). Resume download? (Y/N): ").strip().upper()# BLAH
+                        if choice != 'Y':# BLAH
+                            existing_size = 0 # BLAH
+
+                    req = f"DOWNLOAD@{fileName}@{existing_size}" # BLAH
                     clientSocket.sendall(req.encode('utf-8'))
                     
                     response = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
@@ -148,7 +156,9 @@ def main():
                         continue
                     
                     if "SIZE@" in response:
-                        fileSize = int(response.split("@")[1])
+                        parts = response.split("@") # BLAH
+                        fileSize = int(parts[1]) # BLAH
+                        server_offset = int(parts[2]) if len(parts) > 2 else existing_size # BLAH
                         fileSizeMB = round(fileSize / (1024 * 1024), 2)
                     else:
                         print(f"[ERROR] Unexpected response: {response}")
@@ -165,10 +175,12 @@ def main():
                     
                     print(f"Downloading {fileName}...")
                     startTime = time.time()
+
+                    mode = "ab" if server_offset > 0 else "wb" # BLAH
                     
                     # receive file chunks sequentially until full file size is reached
-                    bytesReceived = 0
-                    with open(fileName, "wb") as f:
+                    bytesReceived = server_offset # BLAH
+                    with open(fileName, mode) as f: # BLAH
                         while bytesReceived < fileSize:
                             remaining = fileSize - bytesReceived
                             chunkSize = BUFFER_SIZE if remaining > BUFFER_SIZE else remaining
@@ -179,11 +191,18 @@ def main():
                             bytesReceived += len(chunk)
                             
                     duration = time.time() - startTime
-                    dataRate = fileSizeMB / duration if duration > 0 else 0
+                    transferSizeMB = round((fileSize - server_offset) / (1024 * 1024), 2) # BLAH
+                    dataRate = transferSizeMB / duration if duration > 0 else 0 # BLAH
                     
                     print("Progress: 100%")
                     print(f"Transfer Time: {duration:.2f} seconds")
                     print(f"Average Speed: {dataRate:.2f} MB/s")
+                    print("Verifying file integrity (SHA-256)...") # BLAH
+                    sha256_hash = hashlib.sha256() # BLAH
+                    with open(fileName, "rb") as f: # BLAH
+                        for byte_block in iter(lambda: f.read(BUFFER_SIZE), b""): #BLAH
+                            sha256_hash.update(byte_block) # BLAH
+                    print(f"[OK] SHA-256 Checksum: {sha256_hash.hexdigest()}") # BLAH
                     print("[OK] Download completed.")
                     logMetrics("DOWNLOAD", fileName, fileSize, duration)
                     

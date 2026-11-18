@@ -70,10 +70,6 @@ def authenticate(conn):
         username = parts[1]
         password_hash = parts[2]
 
-        # load authorized users
-        with open("users.json", "r") as file:
-            users = json.load(file)
-
         # verify username and password
         stored_hash = users.get(username)
 
@@ -86,7 +82,7 @@ def authenticate(conn):
 
     except (OSError, ValueError, PermissionError) as e:
         conn.sendall(f"[ERROR] {e}".encode(FORMAT))
-        print(f"[AUTH] Authentication failed: {e}")
+        print(f"[AUTH] Authentication failed")
         return False
 
 ### to handle individual commands
@@ -363,7 +359,7 @@ def handle_command(conn, cmd_parts):
 ### to handle the clients
 def handle_client(conn, addr):
     print(f"[CONNECT] {addr[0]}:{addr[1]}")
-    print(f"[{threading.current_thread().name}] Started for client {addr}")
+    print(f"[{threading.current_thread().name.split()[1]}] Started for client {addr}")
 
     conn.sendall("[OK] Connected to server.".encode(FORMAT))
 

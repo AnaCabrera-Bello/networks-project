@@ -8,7 +8,7 @@ import json
 import hmac
 import hashlib
 
-IP = "100.82.117.26"
+IP = "100.112.213.107"
 PORT = 4450
 ADDR = (IP,PORT)
 SIZE = 1024

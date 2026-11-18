@@ -8,7 +8,7 @@ from analysis import logMetrics
 
 # chunk size set to 4 KB to prevent memory overflow when streaming large files
 BUFFER_SIZE = 4096
-    
+
 def main():
     clientSocket = None
     connected = False
@@ -36,25 +36,24 @@ def main():
                     print(f"[OK] Connected to server: {welcome_msg}")
                     
                     # secure authentication: hash password with SHA-256
-                    # username = input("Username: ").strip()
-                    # password = getpass.getpass("Password: ")
-                    # hashedPW = hashlib.sha256(password.encode()).hexdigest()
+                    username = input("Username: ").strip()
+                    password = getpass.getpass("Password: ")
+                    hashedPW = hashlib.sha256(password.encode()).hexdigest()
                     
                     # send authentication packet
-                    # authData = f"AUTH@{username}@{hashedPW}"
-                    # clientSocket.sendall(authData.encode('utf-8'))
+                    authData = f"AUTH@{username}@{hashedPW}"
+                    clientSocket.sendall(authData.encode('utf-8'))
                     
                     # receive and evaluate server authentication response
-                    # response = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
-                    # if "OK" in response or "SUCCESS" in response:
-                    #     print("[OK] Authentication successful.")
-                    #     connected = True
-                    # else:
-                    #     print("[ERROR] Authentication failed.")
-                    #     clientSocket.close()
-                    #     clientSocket = None
+                    response = clientSocket.recv(BUFFER_SIZE).decode('utf-8')
+                    if "OK" in response or "SUCCESS" in response:
+                        print("[OK] Authentication successful.")
+                        connected = True
+                    else:
+                        print("[ERROR] Authentication failed.")
+                        clientSocket.close()
+                        clientSocket = None
                         
-                    connected = True # remove once authentication is live
                 except Exception as e:
                     print(f"[ERROR] Connection failed: {e}")
             else:

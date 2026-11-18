@@ -6,6 +6,7 @@ import time
 import csv
 import json
 import hmac
+import hashlib
 
 IP = "100.82.117.26"
 PORT = 4450
@@ -14,6 +15,11 @@ SIZE = 1024
 FORMAT = "utf-8"
 SERVER_PATH = "server"
 SERVER_LOG = "serverPerformanceLog.csv"
+
+users = {
+    "tam": hashlib.sha256("tampassword".encode()).hexdigest(),
+    "alex": hashlib.sha256("alexpassword".encode()).hexdigest()
+}
 
 commands = [
     "UPLOAD",

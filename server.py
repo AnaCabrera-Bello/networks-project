@@ -161,6 +161,8 @@ def download(conn, cmd_parts):
 
         # verify a filename was sent
         filename = cmd_parts[1].strip()
+        start_offset = int(cmd_parts[2].strip()) if len(cmd_parts) > 2 else 0 # BLAH
+
         if not filename:
             raise ValueError("No filename provided.")
 
@@ -176,8 +178,12 @@ def download(conn, cmd_parts):
         tracking = True
 
         # get file size and send to client
-        size = os.path.getsize(file_path)
-        conn.sendall(f"SIZE@{size}".encode(FORMAT))
+        total_size = os.path.getsize(file_path) # BLAH
+
+        if start_offset > total_size: # BLAH
+            start_offset = total_size # BLAH
+
+        conn.sendall(f"SIZE@{total_size}@{start_offset}".encode(FORMAT)) # BLAH
 
         # wait for "READY" response from client to send file (if not ready, stop)
         response = conn.recv(SIZE).decode(FORMAT).strip().upper()
@@ -187,6 +193,7 @@ def download(conn, cmd_parts):
         start_time = time.time()
         # send file
         with open(file_path, "rb") as file:
+            file.seek(start_offset)  # BLAH
             while True:
                 chunk = file.read(SIZE)
 
